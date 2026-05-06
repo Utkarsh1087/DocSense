@@ -1,58 +1,106 @@
-//Pdf loader karne ka
 import * as dotenv from "dotenv";
 dotenv.config();
+
 import { PDFLoader } from "@langchain/community/document_loaders/fs/pdf";
 import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
 import { GoogleGenerativeAIEmbeddings } from "@langchain/google-genai";
 import { Pinecone } from "@pinecone-database/pinecone";
-import { PineconeVectorStore } from "@langchain/community/vectorstores/pinecone";
 
 async function indexDocument() {
-    const PDF_PATH = './dsa.pdf';
-    const pdfLoader = new PDFLoader(PDF_PATH);
-    const rawDocs = await pdfLoader.load();
-    console.log("PDF LOAdED SUCCESSFULLY")
-    //console.log("Raw Document count:", rawDocs.length);
+    try {
+        console.log("--- Starting DocSense Indexing ---");
 
-    // Chunking logic
-    const textSplitter = new RecursiveCharacterTextSplitter({
-        chunkSize: 1000,
-        chunkOverlap: 200,
-    });
+        // 1. Load PDF
+        const pdfLoader = new PDFLoader('./dsa.pdf');
+        const rawDocs = await pdfLoader.load();
+        console.log(`✓ PDF loaded (${rawDocs.length} pages)`);
 
-    const chunkedDocs = await textSplitter.splitDocuments(rawDocs);
-    console.log("CHUNKING COMPLETE")
-    //console.log("Chunked Document count:", chunkedDocs.length);
+        // 2. Chunking
+        const textSplitter = new RecursiveCharacterTextSplitter({
+            chunkSize: 2000,
+            chunkOverlap: 400,
+        });
+        const allChunks = await textSplitter.splitDocuments(rawDocs);
+        const chunkedDocs = allChunks.filter(doc => doc.pageContent.trim().length > 0);
+        console.log(`✓ Chunking complete (${chunkedDocs.length} valid chunks)`);
 
-    //vector embedding model
+        // 3. Configure Embeddings
+        const embeddings = new GoogleGenerativeAIEmbeddings({
+            apiKey: process.env.GEMINI_API_KEY,
+            modelName: "gemini-embedding-001",
+        });
 
-    const embeddings = new GoogleGenerativeAIEmbeddings({
-        apiKey: process.env.GEMINI_API_KEY,
-        model: "text-embedding-004"
-    });
+        // 4. Initialize Pinecone
+        const pinecone = new Pinecone({ apiKey: process.env.PINECONE_API_KEY });
+        const { host } = await pinecone.describeIndex(process.env.PINECONE_INDEX_NAME);
+        console.log(`✓ Connected to Pinecone index: ${process.env.PINECONE_INDEX_NAME}`);
 
-    console.log("Embedding model configured")
+        // 5. Indexing in Batches
+        const batchSize = 10;
+        console.log(`--- Indexing ${chunkedDocs.length} chunks in batches of ${batchSize} ---`);
 
+        // Helper to flatten nested metadata for Pinecone
+        const flattenObject = (obj, prefix = '') => {
+            return Object.keys(obj).reduce((acc, k) => {
+                const pre = prefix.length ? prefix + '.' : '';
+                const value = obj[k];
+                
+                // Pinecone rejects null/undefined. Only process if we have a valid value.
+                if (value === null || value === undefined) return acc;
 
-    //database ko bhi configure
-    //intialize pinecode client
+                if (typeof value === 'object' && !Array.isArray(value)) {
+                    Object.assign(acc, flattenObject(value, pre + k));
+                } else {
+                    acc[pre + k] = value;
+                }
+                return acc;
+            }, {});
+        };
 
-    const pinecone = new Pinecone();
-    const pineconeIndex = pinecone.Index(process.env.PINECONE_INDEX_NAME);
+        for (let i = 0; i < chunkedDocs.length; i += batchSize) {
+            const batch = chunkedDocs.slice(i, i + batchSize);
+            
+            const embeds = await embeddings.embedDocuments(batch.map(d => d.pageContent));
+            
+            const vectors = batch.map((doc, index) => {
+                const values = embeds[index]?.slice(0, 768) || [];
+                if (values.length === 0) return null;
 
-    console.log("Pinecode config complete")
+                // Flatten metadata to match tutorial (e.g. loc.pageNumber)
+                const metadata = { 
+                    ...flattenObject(doc.metadata),
+                    text: doc.pageContent 
+                };
 
+                return { id: `id-${i + index}`, values, metadata };
+            }).filter(v => v !== null);
 
+            if (vectors.length > 0) {
+                const response = await fetch(`https://${host}/vectors/upsert`, {
+                    method: 'POST',
+                    headers: {
+                        'Api-Key': process.env.PINECONE_API_KEY,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ vectors })
+                });
 
+                if (!response.ok) {
+                    const error = await response.json();
+                    console.error(`Batch ${Math.floor(i / batchSize) + 1} failed:`, error.message);
+                } else {
+                    console.log(`[${Math.floor(i / batchSize) + 1}/${Math.ceil(chunkedDocs.length / batchSize)}] Batch successfully indexed.`);
+                }
+            }
 
-    //langchain {chunking,embedding,database}
+            // Rate limiting for Free Tier
+            await new Promise(resolve => setTimeout(resolve, 1000));
+        }
 
-    await PineconeVectorStore.fromDocuments(chunkedDocs, embeddings, {
-        pineconeIndex,
-        maxConcurrency: 5
-    });
-    console.log("Data Stored SUCCESSFULLY")
-
+        console.log("\n--- DocSense Indexing Complete! ---");
+    } catch (error) {
+        console.error("Indexing failed:", error.message);
+    }
 }
 
 indexDocument();

@@ -1,63 +1,50 @@
-# DocSense 📄🤖
+# DocSense RAG Pipeline
 
-DocSense is a powerful RAG (Retrieval-Augmented Generation) system that allows you to index and search through PDF documents using AI. It leverages LangChain, Google Gemini for embeddings, and Pinecone for vector storage.
+A professional Retrieval-Augmented Generation (RAG) system built with **Node.js**, **LangChain**, **Google Gemini AI**, and **Pinecone**. This system allows you to upload PDFs and have an AI-powered conversation with their content.
 
 ## 🚀 Features
-
-- **PDF Parsing**: Automatically extract text from local PDF files.
-- **Intelligent Chunking**: Splits large documents into manageable pieces using `RecursiveCharacterTextSplitter`.
-- **High-Performance Embeddings**: Uses Google's `text-embedding-004` model for high-quality semantic representations.
-- **Vector Search**: Stores and retrieves document segments using Pinecone's serverless vector database.
+- **Smart PDF Indexing**: Uses `RecursiveCharacterTextSplitter` for high-quality context chunks.
+- **Gemini 2.0 Integration**: High-speed, high-accuracy embeddings and responses.
+- **Vector Search**: Pinecone-powered semantic search for pinpoint retrieval.
+- **Robustness**: Built-in metadata flattening, vector slicing, and server-side retry logic.
 
 ## 🛠️ Setup
 
-### 1. Prerequisites
+1. **Clone the repository:**
+   ```bash
+   git clone <your-repo-url>
+   cd RAG1
+   ```
 
-- Node.js (v18 or higher)
-- A Pinecone account and API key
-- A Google AI Studio (Gemini) API key
+2. **Install dependencies:**
+   ```bash
+   npm install
+   ```
 
-### 2. Installation
+3. **Configure Environment Variables:**
+   Create a `.env` file in the root directory and add your keys:
+   ```env
+   GEMINI_API_KEY=your_gemini_api_key
+   PINECONE_API_KEY=your_pinecone_api_key
+   PINECONE_INDEX_NAME=your_index_name
+   ```
 
-Clone the repository and install dependencies:
+## 📖 Usage
 
-```bash
-git clone https://github.com/Utkarsh1087/DocSense.git
-cd DocSense
-npm install --legacy-peer-deps
-```
-
-### 3. Environment Variables
-
-Create a `.env` file in the root directory and add your credentials:
-
-```env
-PINECONE_API_KEY=your_pinecone_key
-GEMINI_API_KEY=your_gemini_key
-PINECONE_INDEX_NAME=your_index_name
-```
-
-## 📂 Usage
-
-To index a document (e.g., `dsa.pdf`), place it in the root directory and run:
-
+### Step 1: Index your PDF
+Place your PDF in the root directory (rename it to `dsa.pdf` or update the path in `index.js`) and run:
 ```bash
 node index.js
 ```
 
-This will:
-1. Load the PDF.
-2. Split the text into chunks.
-3. Generate embeddings for each chunk.
-4. Upload the vectors to Pinecone.
+### Step 2: Ask Questions
+Start the chat interface:
+```bash
+node query.js
+```
 
-## 🏗️ Tech Stack
-
-- **LangChain**: Framework for LLM applications.
-- **Google Generative AI**: Embedding models.
-- **Pinecone**: Vector database.
-- **Node.js**: Runtime environment.
-
-## 📄 License
-
-This project is licensed under the ISC License.
+## 📝 Technologies Used
+- **LangChain**: Document processing and splitting.
+- **Google Gemini**: Text embeddings and LLM generation.
+- **Pinecone**: Cloud-native vector database.
+- **Node.js**: Backend runtime.
