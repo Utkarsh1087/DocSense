@@ -5,8 +5,8 @@ const pdf = require("pdf-parse/lib/pdf-parse.js");
 import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
 import { GoogleGenerativeAIEmbeddings } from "@langchain/google-genai";
 import { Pinecone } from "@pinecone-database/pinecone";
-import { readSettings } from "../../settings/route";
-import { readDocs, writeDocs, formatBytes } from "../route";
+import { readSettings } from "../../../../lib/settingsHelpers";
+import { readDocs, writeDocs, formatBytes } from "../../../../lib/docHelpers";
 
 export async function POST(req: Request) {
   try {

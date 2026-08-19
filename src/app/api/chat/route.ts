@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { GoogleGenerativeAIEmbeddings } from "@langchain/google-genai";
 import { Pinecone } from "@pinecone-database/pinecone";
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import { readSettings } from "../settings/route";
+import { readSettings } from "../../../lib/settingsHelpers";
 
 export async function POST(req: Request) {
   try {

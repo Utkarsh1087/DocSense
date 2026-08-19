@@ -1,12 +1,12 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import GravityStarsBackground from "@/components/GravityStarsBackground";
 import { ArrowRight, Lock, Mail, User, Sparkles } from "lucide-react";
 
-export default function SignupPage() {
+function SignupForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const planParam = searchParams?.get("plan") || "Starter";
@@ -189,5 +189,17 @@ export default function SignupPage() {
         </div>
       </div>
     </main>
+  );
+}
+
+export default function SignupPage() {
+  return (
+    <Suspense fallback={
+      <main className="relative min-h-screen w-full bg-black flex items-center justify-center overflow-hidden text-white/40 font-schibsted font-bold text-xs uppercase tracking-widest">
+        Loading Signup Console...
+      </main>
+    }>
+      <SignupForm />
+    </Suspense>
   );
 }

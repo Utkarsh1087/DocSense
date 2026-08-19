@@ -1,11 +1,15 @@
+export const dynamic = "force-dynamic";
+
 import { NextResponse } from "next/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
 export async function GET(req: Request) {
+  let username = "";
+  let email = "";
   try {
     const { searchParams } = new URL(req.url);
-    const username = searchParams.get("username") || "";
-    const email = searchParams.get("email") || "";
+    username = searchParams.get("username") || "";
+    email = searchParams.get("email") || "";
 
     if (!username && !email) {
       return NextResponse.json({ greetingName: "User" });
