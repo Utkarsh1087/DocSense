@@ -2,34 +2,35 @@ import { MongoClient } from "mongodb";
 
 const uri = process.env.MONGODB_URI;
 
-if (!uri) {
-  throw new Error("Please add your MONGODB_URI to .env");
-}
-
 let client: MongoClient;
 let clientPromise: Promise<MongoClient>;
 
-if (process.env.NODE_ENV === "development") {
-  // In development mode, use a global variable so that the value
-  // is preserved across module reloads caused by HMR (Hot Module Replacement).
-  let globalWithMongo = global as typeof globalThis & {
-    _mongoClientPromise?: Promise<MongoClient>;
-  };
+if (uri) {
+  if (process.env.NODE_ENV === "development") {
+    let globalWithMongo = global as typeof globalThis & {
+      _mongoClientPromise?: Promise<MongoClient>;
+    };
 
-  if (!globalWithMongo._mongoClientPromise) {
+    if (!globalWithMongo._mongoClientPromise) {
+      client = new MongoClient(uri);
+      globalWithMongo._mongoClientPromise = client.connect();
+    }
+    clientPromise = globalWithMongo._mongoClientPromise;
+  } else {
     client = new MongoClient(uri);
-    globalWithMongo._mongoClientPromise = client.connect();
+    clientPromise = client.connect();
   }
-  clientPromise = globalWithMongo._mongoClientPromise;
 } else {
-  // In production mode, it's best to not use a global variable.
-  client = new MongoClient(uri);
-  clientPromise = client.connect();
+  // Defer throwing to runtime; do not crash during Next.js static build pre-generation
+  clientPromise = Promise.resolve() as any;
 }
 
 export default clientPromise;
 
 export async function getDb() {
+  if (!process.env.MONGODB_URI) {
+    throw new Error("Please add your MONGODB_URI connection string to your Environment Variables.");
+  }
   const connection = await clientPromise;
   return connection.db();
 }
