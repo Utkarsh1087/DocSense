@@ -1,30 +1,26 @@
-import fs from "fs";
-import path from "path";
+import { getDb } from "./mongodb";
 
-const dataFilePath = path.join(process.cwd(), "data", "documents.json");
-
-export function readDocs() {
+export async function readDocs(): Promise<any[]> {
   try {
-    if (!fs.existsSync(dataFilePath)) {
-      return [];
-    }
-    const data = fs.readFileSync(dataFilePath, "utf8");
-    return JSON.parse(data || "[]");
+    const db = await getDb();
+    // Return all documents sorted in reverse order of creation
+    return db.collection("documents").find({}).sort({ _id: -1 }).toArray();
   } catch (error) {
-    console.error("Error reading documents db:", error);
+    console.error("Error reading documents from MongoDB:", error);
     return [];
   }
 }
 
-export function writeDocs(docs: any[]) {
+export async function writeDocs(docs: any[]): Promise<void> {
   try {
-    const dir = path.dirname(dataFilePath);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
+    const db = await getDb();
+    // Sync documents array to MongoDB collection
+    await db.collection("documents").deleteMany({});
+    if (docs.length > 0) {
+      await db.collection("documents").insertMany(docs);
     }
-    fs.writeFileSync(dataFilePath, JSON.stringify(docs, null, 2), "utf8");
   } catch (error) {
-    console.error("Error writing documents db:", error);
+    console.error("Error writing documents to MongoDB:", error);
   }
 }
 

@@ -8,11 +8,13 @@ import { Pinecone } from "@pinecone-database/pinecone";
 import { readSettings } from "../../../lib/settingsHelpers";
 import { readDocs, writeDocs, formatBytes } from "../../../lib/docHelpers";
 
-// GET: Retrieve all documents
-export async function GET() {
+// GET: Retrieve all user-specific documents
+export async function GET(req: Request) {
   try {
-    const docs = readDocs();
-    return NextResponse.json(docs);
+    const userId = req.headers.get("x-user-id") || "default_user";
+    const docs = await readDocs();
+    const userDocs = docs.filter((d: any) => d.userId === userId);
+    return NextResponse.json(userDocs);
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
@@ -33,9 +35,12 @@ export async function POST(req: Request) {
     }
 
     const userPlan = req.headers.get("x-user-plan") || "Starter";
+    const userId = req.headers.get("x-user-id") || "default_user";
+
     if (userPlan === "Starter") {
-      const currentDocs = readDocs();
-      if (currentDocs.length >= 3) {
+      const currentDocs = await readDocs();
+      const userDocs = currentDocs.filter((d: any) => d.userId === userId);
+      if (userDocs.length >= 3) {
         return NextResponse.json(
           { error: "Upload limit reached. The Starter plan is limited to 3 documents. Please upgrade to Pro in Settings to upload unlimited files." },
           { status: 403 }
@@ -181,11 +186,12 @@ export async function POST(req: Request) {
       tokens: `${docsToEmbed.length * 250} est.`, // rough approximation for display
       vectorIds,
       chunkCount: docsToEmbed.length,
+      userId, // Keyed by user ID!
     };
 
-    const currentDocs = readDocs();
+    const currentDocs = await readDocs();
     currentDocs.unshift(newDoc);
-    writeDocs(currentDocs);
+    await writeDocs(currentDocs);
 
     return NextResponse.json(newDoc);
   } catch (error: any) {
@@ -215,11 +221,16 @@ export async function DELETE(req: Request) {
       );
     }
 
-    const currentDocs = readDocs();
+    const userId = req.headers.get("x-user-id") || "default_user";
+    const currentDocs = await readDocs();
     const docToDelete = currentDocs.find((d: any) => d.id === id);
 
     if (!docToDelete) {
       return NextResponse.json({ error: "Document not found." }, { status: 404 });
+    }
+
+    if (docToDelete.userId !== userId) {
+      return NextResponse.json({ error: "Unauthorized access to this document." }, { status: 403 });
     }
 
     // 1. Delete vectors from Pinecone
@@ -233,7 +244,7 @@ export async function DELETE(req: Request) {
 
     // 2. Remove entry from local metadata database
     const updatedDocs = currentDocs.filter((d: any) => d.id !== id);
-    writeDocs(updatedDocs);
+    await writeDocs(updatedDocs);
 
     return NextResponse.json({ success: true, message: `Successfully deleted document: ${docToDelete.name}` });
   } catch (error: any) {

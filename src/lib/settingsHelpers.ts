@@ -4,7 +4,7 @@ import path from "path";
 const settingsFilePath = path.join(process.cwd(), "data", "settings.json");
 
 export const DEFAULT_SETTINGS = {
-  model: "gemini-1.5-flash",
+  model: "gemini-3.6-flash",
   systemInstruction: "You are a Document Expert. Answer questions based ONLY on the provided context. If the answer is not in the context, say 'I could not find the answer in the provided document.' Keep answers concise, clear, and educational.",
   temperature: 0.2,
   maxTokens: 1024,

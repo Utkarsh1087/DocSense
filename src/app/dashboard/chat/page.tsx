@@ -42,7 +42,11 @@ function ChatConsoleContent() {
   useEffect(() => {
     async function fetchDocs() {
       try {
-        const res = await fetch("/api/documents");
+        const res = await fetch("/api/documents", {
+          headers: {
+            "x-user-id": localStorage.getItem("userId") || "",
+          }
+        });
         if (res.ok) {
           const data = await res.json();
           setDocuments(data);
@@ -83,7 +87,8 @@ function ChatConsoleContent() {
         method: "POST",
         headers: { 
           "Content-Type": "application/json",
-          "x-user-plan": localStorage.getItem("userPlan") || "Starter"
+          "x-user-plan": localStorage.getItem("userPlan") || "Starter",
+          "x-user-id": localStorage.getItem("userId") || ""
         },
         body: JSON.stringify({
           message: userMessageText,

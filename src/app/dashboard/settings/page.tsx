@@ -48,7 +48,7 @@ export default function SettingsPage() {
   const [username, setUsername] = useState("Admin");
   const [userPlan, setUserPlan] = useState("Starter");
   const [settings, setSettings] = useState<SettingsState>({
-    model: "gemini-1.5-flash",
+    model: "gemini-3.6-flash",
     systemInstruction: PRESETS.balanced,
     temperature: 0.2,
     maxTokens: 1024,
@@ -105,6 +105,15 @@ export default function SettingsPage() {
 
       if (!res.ok) throw new Error("Failed to save settings.");
       
+      const userId = localStorage.getItem("userId") || "";
+      if (userId) {
+        await fetch("/api/auth/upgrade-profile", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId, plan: userPlan }),
+        });
+      }
+
       localStorage.setItem("username", username);
       localStorage.setItem("userPlan", userPlan);
       window.dispatchEvent(new Event("user-profile-change"));
@@ -171,7 +180,7 @@ export default function SettingsPage() {
   const handleReset = () => {
     if (confirm("Reset all settings to project defaults?")) {
       setSettings({
-        model: "gemini-1.5-flash",
+        model: "gemini-3.6-flash",
         systemInstruction: PRESETS.balanced,
         temperature: 0.2,
         maxTokens: 1024,
@@ -290,7 +299,20 @@ export default function SettingsPage() {
                 ) : (
                   <button
                     type="button"
-                    onClick={() => setUserPlan("Starter")}
+                    onClick={async () => {
+                      setUserPlan("Starter");
+                      localStorage.setItem("userPlan", "Starter");
+                      const userId = localStorage.getItem("userId") || "";
+                      if (userId) {
+                        await fetch("/api/auth/upgrade-profile", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ userId, plan: "Starter" }),
+                        });
+                      }
+                      window.dispatchEvent(new Event("user-profile-change"));
+                      alert("Plan downgraded to Starter.");
+                    }}
                     className="border border-red-500/20 hover:bg-red-500/5 text-red-500 px-8 py-3.5 rounded-2xl font-schibsted font-bold text-xs uppercase tracking-widest active:scale-98 transition-all whitespace-nowrap"
                   >
                     Downgrade to Starter
@@ -318,8 +340,8 @@ export default function SettingsPage() {
                   onChange={(e) => setSettings({ ...settings, model: e.target.value })}
                   className="w-full bg-white border border-black/5 rounded-2xl px-4 py-3.5 text-sm font-schibsted font-bold text-black outline-none shadow-sm cursor-pointer hover:border-black/20 focus:border-black/20 transition-colors"
                 >
-                  <option value="gemini-1.5-flash">gemini-1.5-flash (Fast & Balanced)</option>
-                  <option value="gemini-1.5-pro">gemini-1.5-pro (Deep Complex Logic)</option>
+                  <option value="gemini-3.6-flash">gemini-3.6-flash (Fast & Balanced)</option>
+                  <option value="gemini-3.1-pro-preview">gemini-3.1-pro-preview (Deep Complex Logic)</option>
                 </select>
               </div>
 

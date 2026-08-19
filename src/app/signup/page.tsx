@@ -17,7 +17,7 @@ function SignupForm() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name || !email || !password || !confirmPassword) return;
     if (password !== confirmPassword) {
@@ -26,26 +26,38 @@ function SignupForm() {
     }
 
     setLoading(true);
-    // Simulate signup, login, and redirect
-    setTimeout(async () => {
-      localStorage.setItem("isLoggedIn", "true");
-      localStorage.setItem("username", name);
-      
+    try {
       const chosenPlan = planParam.toLowerCase() === "pro" ? "Pro" : "Starter";
-      localStorage.setItem("userPlan", "Starter"); // Set default Starter until payment completes
+      
+      const res = await fetch("/api/auth/signup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: name, email, password, plan: chosenPlan }),
+      });
+
+      const user = await res.json();
+      if (!res.ok) {
+        throw new Error(user.error || "Failed to register.");
+      }
+
+      localStorage.setItem("isLoggedIn", "true");
+      localStorage.setItem("userId", user.id);
+      localStorage.setItem("username", user.username);
+      localStorage.setItem("userEmail", user.email);
+      localStorage.setItem("userPlan", user.plan);
 
       window.dispatchEvent(new Event("login-state-change"));
       window.dispatchEvent(new Event("user-profile-change"));
 
       if (chosenPlan === "Pro") {
         try {
-          const res = await fetch("/api/stripe/checkout", {
+          const resStripe = await fetch("/api/stripe/checkout", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ planName: "pro" }),
+            body: JSON.stringify({ planName: "pro", userId: user.id }),
           });
-          const data = await res.json();
-          if (res.ok && data.url) {
+          const data = await resStripe.json();
+          if (resStripe.ok && data.url) {
             window.location.href = data.url;
             return;
           }
@@ -54,9 +66,12 @@ function SignupForm() {
         }
       }
 
-      setLoading(false);
       router.push("/dashboard");
-    }, 1000);
+    } catch (err: any) {
+      alert(`❌ Registration failed: ${err.message || "Failed to create account."}`);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (

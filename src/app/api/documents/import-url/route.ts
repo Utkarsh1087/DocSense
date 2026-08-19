@@ -16,9 +16,12 @@ export async function POST(req: Request) {
     }
 
     const userPlan = req.headers.get("x-user-plan") || "Starter";
+    const userId = req.headers.get("x-user-id") || "default_user";
+
     if (userPlan === "Starter") {
-      const currentDocs = readDocs();
-      if (currentDocs.length >= 3) {
+      const currentDocs = await readDocs();
+      const userDocs = currentDocs.filter((d: any) => d.userId === userId);
+      if (userDocs.length >= 3) {
         return NextResponse.json(
           { error: "Upload limit reached. The Starter plan is limited to 3 documents. Please upgrade to Pro in Settings to upload unlimited files." },
           { status: 403 }
@@ -188,11 +191,12 @@ export async function POST(req: Request) {
       tokens: `${docsToEmbed.length * 250} est.`,
       vectorIds,
       chunkCount: docsToEmbed.length,
+      userId, // Keyed by user ID!
     };
 
-    const currentDocs = readDocs();
+    const currentDocs = await readDocs();
     currentDocs.unshift(newDoc);
-    writeDocs(currentDocs);
+    await writeDocs(currentDocs);
 
     return NextResponse.json(newDoc);
   } catch (error: any) {

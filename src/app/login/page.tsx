@@ -12,22 +12,37 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password) return;
 
     setLoading(true);
-    // Simulate login and redirect
-    setTimeout(() => {
-      setLoading(false);
-      localStorage.setItem("isLoggedIn", "true");
-      if (!localStorage.getItem("username")) {
-        localStorage.setItem("username", "Admin User");
+    try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+
+      const user = await res.json();
+      if (!res.ok) {
+        throw new Error(user.error || "Failed to log in.");
       }
+
+      localStorage.setItem("isLoggedIn", "true");
+      localStorage.setItem("userId", user.id);
+      localStorage.setItem("username", user.username);
+      localStorage.setItem("userEmail", user.email);
+      localStorage.setItem("userPlan", user.plan);
+
       window.dispatchEvent(new Event("login-state-change"));
       window.dispatchEvent(new Event("user-profile-change"));
       router.push("/dashboard");
-    }, 1000);
+    } catch (err: any) {
+      alert(`❌ Login failed: ${err.message || "Invalid credentials."}`);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (

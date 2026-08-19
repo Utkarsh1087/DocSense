@@ -26,6 +26,7 @@
     "dotenv": "^16.4.5",
     "hls.js": "^1.5.0",
     "lucide-react": "latest",
+    "mongodb": "^5.9.2",
     "next": "^14.2.16",
     "pdf-parse": "^1.1.1",
     "react": "^18.3.1",

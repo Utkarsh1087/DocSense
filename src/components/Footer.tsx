@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import Link from "next/link";
 
 export default function Footer() {
   return (
@@ -34,14 +35,9 @@ export default function Footer() {
         <div className="col-span-1">
           <h4 className="font-schibsted font-bold text-xs uppercase tracking-widest text-black mb-8 opacity-40">Company</h4>
           <ul className="space-y-4 text-[11px] font-bold font-schibsted text-black/60 uppercase tracking-widest">
-            <li><a href="#" className="hover:text-black transition-colors">Blog</a></li>
-            <li><a href="#" className="hover:text-black transition-colors">Security</a></li>
-            <li><a href="#" className="hover:text-black transition-colors">About</a></li>
-            <li className="pt-2 flex gap-3 text-[9px] opacity-40">
-              <a href="#" className="hover:text-black transition-colors">Privacy</a>
-              <span>·</span>
-              <a href="#" className="hover:text-black transition-colors">Terms</a>
-            </li>
+            <li><Link href="/about" className="hover:text-black transition-colors">About</Link></li>
+            <li><Link href="/privacy" className="hover:text-black transition-colors">Privacy</Link></li>
+            <li><Link href="/terms" className="hover:text-black transition-colors">Terms</Link></li>
           </ul>
         </div>
       </div>

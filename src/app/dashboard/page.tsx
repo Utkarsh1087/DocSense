@@ -52,6 +52,7 @@ export default function DocumentLibrary() {
         headers: {
           "Content-Type": "application/json",
           "x-user-plan": plan,
+          "x-user-id": localStorage.getItem("userId") || "",
         },
         body: JSON.stringify({ url }),
       });
@@ -77,7 +78,12 @@ export default function DocumentLibrary() {
     try {
       setLoading(true);
       setError(null);
-      const res = await fetch("/api/documents");
+      const res = await fetch("/api/documents", {
+        headers: {
+          "x-user-id": localStorage.getItem("userId") || "",
+          "x-user-plan": localStorage.getItem("userPlan") || "Starter",
+        }
+      });
       if (!res.ok) throw new Error("Failed to load documents.");
       const data = await res.json();
       setDocuments(data);
@@ -100,6 +106,16 @@ export default function DocumentLibrary() {
       localStorage.setItem("userPlan", "Pro");
       activePlan = "Pro";
       setUserPlan("Pro");
+      
+      const userId = localStorage.getItem("userId") || "";
+      if (userId) {
+        fetch("/api/auth/upgrade-profile", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId, plan: "Pro" }),
+        }).catch(err => console.error("Failed to upgrade DB profile:", err));
+      }
+
       // Clean query string from url
       const cleanUrl = window.location.pathname;
       window.history.replaceState({}, document.title, cleanUrl);
@@ -171,6 +187,7 @@ export default function DocumentLibrary() {
         method: "POST",
         headers: {
           "x-user-plan": userPlan,
+          "x-user-id": localStorage.getItem("userId") || "",
         },
         body: formData,
       });
@@ -202,6 +219,9 @@ export default function DocumentLibrary() {
     try {
       const res = await fetch(`/api/documents?id=${id}`, {
         method: "DELETE",
+        headers: {
+          "x-user-id": localStorage.getItem("userId") || "",
+        }
       });
 
       const data = await res.json();

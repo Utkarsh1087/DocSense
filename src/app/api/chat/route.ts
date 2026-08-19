@@ -3,6 +3,7 @@ import { GoogleGenerativeAIEmbeddings } from "@langchain/google-genai";
 import { Pinecone } from "@pinecone-database/pinecone";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { readSettings } from "../../../lib/settingsHelpers";
+import { readDocs } from "../../../lib/docHelpers";
 
 export async function POST(req: Request) {
   try {
@@ -46,12 +47,30 @@ export async function POST(req: Request) {
     const pinecone = new Pinecone({ apiKey: pineconeKey });
     const pineconeIndex = pinecone.Index(indexName);
 
+    const userId = req.headers.get("x-user-id") || "default_user";
+    const userDocs = (await readDocs()).filter((d: any) => d.userId === userId);
+    const userFilenames = userDocs.map((d: any) => d.name);
+
+    if (userFilenames.length === 0) {
+      return NextResponse.json({ 
+        answer: "It looks like you haven't uploaded or indexed any documents yet! Please go to your library dashboard to upload a PDF.", 
+        citations: [] 
+      });
+    }
+
     // 2. Generate Query Vector
     const rawVector = await embeddings.embedQuery(message);
     const queryVector = rawVector.slice(0, 768);
 
-    // 3. Query Pinecone (with filter if document is selected)
-    const filter = documentName ? { filename: { $eq: documentName } } : undefined;
+    // 3. Query Pinecone (with filter isolated to user's filenames)
+    let filter: any = { filename: { $in: userFilenames } };
+    if (documentName) {
+      const isOwner = userFilenames.includes(documentName);
+      if (!isOwner) {
+        return NextResponse.json({ error: "Document not found or unauthorized access." }, { status: 403 });
+      }
+      filter = { filename: { $eq: documentName } };
+    }
 
     let topK = config.topK || 5;
     if (userPlan === "Starter") {
@@ -75,12 +94,25 @@ export async function POST(req: Request) {
       .filter(Boolean)
       .join("\n\n---\n\n");
 
-    const citations = matches.map((match) => ({
-      id: match.id,
-      score: match.score,
-      filename: (match.metadata as any)?.filename || "Unknown Document",
-      pageNumber: (match.metadata as any)?.pageNumber || "N/A",
-    }));
+    // Deduplicate citations by filename + pageNumber
+    const citations: any[] = [];
+    const seenCitations = new Set<string>();
+
+    for (const match of matches) {
+      const filename = (match.metadata as any)?.filename || "Unknown Document";
+      const pageNumber = (match.metadata as any)?.pageNumber || "N/A";
+      const key = `${filename}_page_${pageNumber}`;
+
+      if (!seenCitations.has(key)) {
+        seenCitations.add(key);
+        citations.push({
+          id: match.id,
+          score: match.score,
+          filename,
+          pageNumber,
+        });
+      }
+    }
 
     // 5. Send payload to Gemini Flash LLM
     const prompt = `Context: ${context || "No context found."}\n\nQuestion: ${message}`;
