@@ -31,7 +31,7 @@ const steps = [
 
 export default function Workflow() {
   return (
-    <section className="relative bg-white py-32 px-[120px]">
+    <section id="workflow" className="relative bg-white py-32 px-[120px]">
       {/* Fading Top Divider */}
       <div className="absolute top-0 left-0 right-0 h-[32px] pointer-events-none">
         <div className="w-full h-px bg-gradient-to-r from-transparent via-black/10 to-transparent" />

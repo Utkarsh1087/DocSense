@@ -1,6 +1,8 @@
 "use client";
 
+import React, { useState, useEffect } from "react";
 import { Check, Sparkles } from "lucide-react";
+import { useRouter } from "next/navigation";
 
 const plans = [
   {
@@ -30,8 +32,59 @@ const plans = [
 ];
 
 export default function Pricing() {
+  const router = useRouter();
+  const [upgradingPlan, setUpgradingPlan] = useState(false);
+  const [session, setSession] = useState({ isLoggedIn: false, plan: "Starter" });
+
+  useEffect(() => {
+    setSession({
+      isLoggedIn: localStorage.getItem("isLoggedIn") === "true",
+      plan: localStorage.getItem("userPlan") || "Starter",
+    });
+  }, []);
+
+  const handlePricingClick = async (planName: string) => {
+    const plan = planName.toLowerCase();
+
+    // 1. Not logged in -> take to signup with selected plan
+    if (!session.isLoggedIn) {
+      router.push(`/signup?plan=${plan}`);
+      return;
+    }
+
+    // 2. Logged in and already on Pro -> always take to dashboard
+    if (session.plan === "Pro") {
+      router.push("/dashboard");
+      return;
+    }
+
+    // 3. Logged in and on Starter -> route or upgrade
+    if (session.plan === "Starter") {
+      if (plan === "starter") {
+        router.push("/dashboard");
+      } else if (plan === "pro") {
+        setUpgradingPlan(true);
+        try {
+          const res = await fetch("/api/stripe/checkout", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ planName: "pro" }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || "Failed to initialize Stripe session.");
+          if (data.url) {
+            window.location.href = data.url;
+          }
+        } catch (err: any) {
+          alert(err.message || "Failed to redirect to billing portal.");
+        } finally {
+          setUpgradingPlan(false);
+        }
+      }
+    }
+  };
   return (
-    <section className="bg-white py-32 px-[120px] border-b border-black/5">
+    <section id="pricing" className="bg-white py-32 px-[120px] border-b border-black/5">
       <div className="max-w-7xl mx-auto">
         <div className="text-center mb-24">
           <span className="text-[10px] font-bold font-schibsted uppercase tracking-[0.3em] text-black/40 mb-6 block">
@@ -81,12 +134,20 @@ export default function Pricing() {
                 </ul>
               </div>
 
-              <button className={`w-full py-4 rounded-2xl font-schibsted font-bold text-xs uppercase tracking-widest transition-all ${
-                plan.popular 
-                  ? "bg-white text-black hover:bg-gray-100" 
-                  : "bg-black text-white hover:bg-black/80"
-              }`}>
-                {plan.cta}
+              <button 
+                onClick={() => {
+                  if (plan.price !== "Custom") {
+                    handlePricingClick(plan.name);
+                  }
+                }}
+                disabled={upgradingPlan && plan.name === "Pro"}
+                className={`w-full py-4 rounded-2xl font-schibsted font-bold text-xs uppercase tracking-widest transition-all text-center block cursor-pointer disabled:opacity-50 ${
+                  plan.popular 
+                    ? "bg-white text-black hover:bg-gray-100" 
+                    : "bg-black text-white hover:bg-black/80"
+                } ${plan.price === "Custom" ? "pointer-events-none opacity-50 cursor-not-allowed" : ""}`}
+              >
+                {upgradingPlan && plan.name === "Pro" ? "Connecting..." : plan.cta}
               </button>
             </div>
           ))}

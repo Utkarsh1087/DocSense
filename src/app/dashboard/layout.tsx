@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { 
   FolderOpen, 
   BarChart3, 
@@ -8,10 +8,11 @@ import {
   Settings, 
   MessageSquare, 
   Search as SearchIcon,
-  Plus
+  Plus,
+  LogOut
 } from "lucide-react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 
 const navItems = [
   { icon: <FolderOpen className="w-5 h-5" />, label: "Library", path: "/dashboard" },
@@ -21,42 +22,115 @@ const navItems = [
 ];
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname();
+  const pathnameHook = usePathname();
+  const router = useRouter();
+  const [username, setUsername] = useState("Admin");
+  const [userPlan, setUserPlan] = useState("Starter");
+  const [pathname, setPathname] = useState("");
+
+  useEffect(() => {
+    setPathname(pathnameHook);
+  }, [pathnameHook]);
+
+  useEffect(() => {
+    const loadProfile = () => {
+      setUsername(localStorage.getItem("username") || "Admin");
+      setUserPlan(localStorage.getItem("userPlan") || "Starter");
+    };
+    loadProfile();
+    window.addEventListener("user-profile-change", loadProfile);
+    window.addEventListener("user-plan-change", loadProfile);
+    return () => {
+      window.removeEventListener("user-profile-change", loadProfile);
+      window.removeEventListener("user-plan-change", loadProfile);
+    };
+  }, []);
+
+  const handleLogout = () => {
+    localStorage.removeItem("isLoggedIn");
+    window.dispatchEvent(new Event("login-state-change"));
+    router.push("/");
+  };
 
   return (
     <div className="flex h-screen bg-[#fcfcfc] overflow-hidden">
       {/* Sidebar */}
       <aside className="w-[280px] bg-white border-r border-black/5 flex flex-col p-6">
         <div className="mb-12 px-2">
-          <div className="font-schibsted font-bold text-[22px] tracking-[-1.44px] text-black">
-            Doc<span className="text-gray-400">Sense</span>
-          </div>
-          <span className="text-[10px] font-bold text-black/30 uppercase tracking-[0.2em] mt-1 block">
-            Enterprise Console
-          </span>
+          <Link href="/" className="group block">
+            <div className="font-schibsted font-bold text-[22px] tracking-[-1.44px] text-black group-hover:opacity-80 transition-opacity">
+              Doc<span className="text-gray-400">Sense</span>
+            </div>
+            <span className="text-[10px] font-bold text-black/30 uppercase tracking-[0.2em] mt-1 block">
+              Enterprise Console
+            </span>
+          </Link>
         </div>
 
         <nav className="flex-1 space-y-2">
-          {navItems.map((item) => (
-            <Link 
-              key={item.label}
-              href={item.path}
-              className={`flex items-center gap-4 px-4 py-3 rounded-2xl font-schibsted font-bold text-sm transition-all ${
-                pathname === item.path 
-                  ? "bg-black text-white shadow-xl shadow-black/10" 
-                  : "text-black/40 hover:bg-black/5 hover:text-black"
-              }`}
-            >
-              {item.icon}
-              {item.label}
-            </Link>
-          ))}
+          {navItems.map((item) => {
+            const isPaidFeature = item.label === "Analytics" || item.label === "Team";
+            return (
+              <Link 
+                key={item.label}
+                href={item.path}
+                onClick={(e) => {
+                  if (isPaidFeature) {
+                    e.preventDefault();
+                    if (userPlan === "Starter") {
+                      alert(`🔒 The ${item.label} feature is exclusive to the Pro Tier subscription. Please upgrade in Settings to gain access!`);
+                    } else {
+                      alert(`🚀 The ${item.label} dashboard is coming soon in the next major update for Pro members!`);
+                    }
+                  }
+                }}
+                className={`flex items-center gap-4 px-4 py-3 rounded-2xl font-schibsted font-bold text-sm transition-all ${
+                  pathname === item.path 
+                    ? "bg-black text-white shadow-xl shadow-black/10" 
+                    : "text-black/40 hover:bg-black/5 hover:text-black"
+                }`}
+              >
+                {isPaidFeature ? (
+                  <div className="flex items-center justify-between w-full">
+                    <div className="flex items-center gap-4">
+                      {item.icon}
+                      <span>{item.label}</span>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <span className="px-1.5 py-0.5 rounded-[4px] bg-purple-500/10 text-purple-600 font-bold uppercase text-[7.5px] tracking-wider font-schibsted border border-purple-500/15 whitespace-nowrap">
+                        Coming Soon
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    {item.icon}
+                    {item.label}
+                  </>
+                )}
+              </Link>
+            );
+          })}
         </nav>
 
-        <div className="pt-6 border-t border-black/5">
-          <button className="flex items-center gap-4 px-4 py-3 w-full rounded-2xl font-schibsted font-bold text-sm text-black/40 hover:bg-black/5 hover:text-black transition-all">
+        <div className="pt-6 border-t border-black/5 space-y-2">
+          <Link 
+            href="/dashboard/settings"
+            className={`flex items-center gap-4 px-4 py-3 rounded-2xl font-schibsted font-bold text-sm transition-all ${
+              pathname === "/dashboard/settings" 
+                ? "bg-black text-white shadow-xl shadow-black/10" 
+                : "text-black/40 hover:bg-black/5 hover:text-black"
+            }`}
+          >
             <Settings className="w-5 h-5" />
             Settings
+          </Link>
+          <button 
+            onClick={handleLogout}
+            className="flex items-center gap-4 px-4 py-3 w-full rounded-2xl font-schibsted font-bold text-sm text-red-500/80 hover:bg-red-500/5 hover:text-red-500 transition-all"
+          >
+            <LogOut className="w-5 h-5" />
+            Log Out
           </button>
         </div>
       </aside>
@@ -81,12 +155,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               <Plus className="w-4 h-4" />
               New Index
             </button>
-            <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-gray-200 to-gray-50 border border-black/5 shadow-sm" />
+            <div className="flex items-center gap-3">
+              <span className="font-schibsted font-bold text-xs uppercase tracking-widest text-black/60">{username}</span>
+              <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-gray-200 to-gray-50 border border-black/5 shadow-sm flex items-center justify-center font-bold text-black font-schibsted text-sm uppercase">
+                {username.substring(0, 2)}
+              </div>
+            </div>
           </div>
         </header>
 
         {/* Dynamic Content */}
-        <div className="flex-1 overflow-y-auto bg-[#fcfcfc]">
+        <div data-lenis-prevent className="flex-1 overflow-y-auto bg-[#fcfcfc]">
           {children}
         </div>
       </main>

@@ -1,7 +1,6 @@
 import Navbar from "@/components/Navbar";
 import HeroSection from "@/components/HeroSection";
 import Branding from "@/components/Branding";
-import Integrations from "@/components/Integrations";
 import Workflow from "@/components/Workflow";
 import Comparison from "@/components/Comparison";
 import Testimonials from "@/components/Testimonials";
@@ -15,7 +14,6 @@ export default function Home() {
       <Navbar />
       <HeroSection />
       <Branding />
-      <Integrations />
       <Workflow />
       <Comparison />
       <Testimonials />

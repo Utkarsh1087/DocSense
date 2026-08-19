@@ -3,6 +3,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { ArrowUp, Paperclip, Mic, Search, Sparkles, Link as LinkIcon } from "lucide-react";
 import Toast from "./Toast";
+import { useRouter } from "next/navigation";
 
 const placeholders = [
   "Paste a PDF link here to start indexing...",
@@ -12,6 +13,7 @@ const placeholders = [
 ];
 
 export default function HeroSection() {
+  const router = useRouter();
   const videoRef = useRef<HTMLVideoElement>(null);
   const [opacity, setOpacity] = useState(0);
   const fadingOutRef = useRef(false);
@@ -25,7 +27,13 @@ export default function HeroSection() {
   
   // Toast State
   const [showToast, setShowToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState("");
   const [queryInput, setQueryInput] = useState("");
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+
+  useEffect(() => {
+    setIsLoggedIn(localStorage.getItem("isLoggedIn") === "true");
+  }, []);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -101,6 +109,43 @@ export default function HeroSection() {
 
   const handleQuery = () => {
     if (!queryInput) return;
+    
+    const trimmedInput = queryInput.trim();
+    const cleanInput = trimmedInput.toLowerCase();
+    
+    // Check if URL contains a PDF extension or is a Google Drive share link
+    const isUrlPdf = (trimmedInput.startsWith("http://") || trimmedInput.startsWith("https://")) && 
+      (cleanInput.endsWith(".pdf") || 
+       cleanInput.includes(".pdf?") || 
+       cleanInput.includes(".pdf#") || 
+       cleanInput.includes("drive.google.com/file/d/"));
+
+    if (isUrlPdf) {
+      if (isLoggedIn) {
+        router.push(`/dashboard?import_url=${encodeURIComponent(trimmedInput)}`);
+      } else {
+        localStorage.setItem("pending_pdf_url", trimmedInput);
+        router.push("/signup?plan=starter");
+      }
+      setQueryInput("");
+      return;
+    }
+
+    const query = trimmedInput.toLowerCase();
+    if (query === "hii" || query === "hi" || query === "hello" || query === "hey") {
+      if (isLoggedIn) {
+        setToastMessage("Intelligence Engine: Hello! Let's go to your dashboard to query your indexed files.");
+      } else {
+        setToastMessage("Intelligence Engine: Hello! Go to your dashboard to upload and query your own PDF documents.");
+      }
+    } else {
+      if (isLoggedIn) {
+        setToastMessage(`Intelligence Engine: Successfully processed "${queryInput}". Let's go to your dashboard to query your own PDFs.`);
+      } else {
+        setToastMessage(`Intelligence Engine: Successfully processed "${queryInput}". Log in or Sign Up to get actual answers from your own PDFs.`);
+      }
+    }
+
     setShowToast(true);
     setQueryInput("");
   };
@@ -110,7 +155,7 @@ export default function HeroSection() {
       <Toast 
         show={showToast} 
         onClose={() => setShowToast(false)} 
-        message="Intelligence Engine: Successfully retrieved context from page 12 of 'Q3_Master_Agreement.pdf'. Answer generated with 99.8% confidence."
+        message={toastMessage}
       />
 
       <div className="absolute inset-0 w-[115%] h-[125%] left-[-7.5%] top-[-10%] z-0">
@@ -169,7 +214,18 @@ export default function HeroSection() {
                 { icon: <Paperclip className="w-3.5 h-3.5" />, label: "Upload" },
                 { icon: <Search className="w-3.5 h-3.5" />, label: "Index" },
               ].map((btn) => (
-                <button key={btn.label} className="bg-white/80 hover:bg-white px-4 py-2 rounded-[10px] flex items-center gap-2 text-[11px] text-black font-bold font-schibsted uppercase tracking-wider transition-colors border border-black/5 shadow-sm">
+                <button 
+                  key={btn.label} 
+                  onClick={() => {
+                    if (isLoggedIn) {
+                      router.push("/dashboard");
+                    } else {
+                      setToastMessage(`Please Log In or Sign Up to access document ${btn.label.toLowerCase()} tools.`);
+                      setShowToast(true);
+                    }
+                  }}
+                  className="bg-white/80 hover:bg-white px-4 py-2 rounded-[10px] flex items-center gap-2 text-[11px] text-black font-bold font-schibsted uppercase tracking-wider transition-colors border border-black/5 shadow-sm cursor-pointer"
+                >
                   {btn.icon}
                   {btn.label}
                 </button>

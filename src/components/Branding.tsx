@@ -60,15 +60,15 @@ const Counter = ({ value }: { value: string }) => {
 };
 
 const stats = [
-  { label: "Documents Indexed", value: "1.2M+" },
+  { label: "Chunks Indexed", value: "1.2M+" },
   { label: "Query Latency", value: "24ms" },
-  { label: "RAG Accuracy", value: "99.8%" },
-  { label: "Vector Density", value: "1536d" },
+  { label: "Context Window", value: "1.0M" },
+  { label: "Vector Dimension", value: "768d" },
 ];
 
 export default function Branding() {
   return (
-    <section className="bg-white py-24 px-[120px] border-y border-black/5">
+    <section id="product" className="bg-white py-24 px-[120px] border-y border-black/5">
       <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-12">
         <div className="max-w-xs text-center md:text-left">
           <span className="text-[10px] font-bold font-schibsted uppercase tracking-[0.3em] text-black/40 mb-4 block">

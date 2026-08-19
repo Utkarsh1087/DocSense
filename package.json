@@ -12,7 +12,7 @@
     "rag:query": "node query.js"
   },
   "dependencies": {
-    "@google/generative-ai": "^0.1.0",
+    "@google/generative-ai": "^0.24.1",
     "@langchain/community": "^0.0.28",
     "@langchain/core": "^0.1.44",
     "@langchain/google-genai": "^0.0.12",
@@ -21,15 +21,17 @@
     "@pinecone-database/pinecone": "^4.1.0",
     "@splinetool/react-spline": "latest",
     "@splinetool/runtime": "latest",
-    "hls.js": "^1.5.0",
+    "@stripe/stripe-js": "^9.13.0",
     "clsx": "^2.1.0",
     "dotenv": "^16.4.5",
+    "hls.js": "^1.5.0",
     "lucide-react": "latest",
     "next": "^14.2.16",
-    "pdf-parse": "latest",
+    "pdf-parse": "^1.1.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "readline-sync": "^1.4.10",
+    "stripe": "^22.5.0",
     "tailwind-merge": "^2.2.2"
   },
   "devDependencies": {

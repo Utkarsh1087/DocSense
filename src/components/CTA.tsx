@@ -4,7 +4,32 @@ import React from "react";
 import { ArrowRight } from "lucide-react";
 import GravityStarsBackground from "./GravityStarsBackground";
 
+import { useRouter } from "next/navigation";
+import { useState, useEffect } from "react";
+
 export default function CTA() {
+  const router = useRouter();
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+
+  useEffect(() => {
+    setIsLoggedIn(localStorage.getItem("isLoggedIn") === "true");
+  }, []);
+
+  const handleStartTrial = () => {
+    if (isLoggedIn) {
+      router.push("/dashboard");
+    } else {
+      router.push("/signup?plan=starter");
+    }
+  };
+
+  const handleExplorePlans = () => {
+    const el = document.getElementById("pricing");
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth" });
+    }
+  };
+
   return (
     <section className="relative bg-[#070b0a] py-32 px-[120px] overflow-hidden group">
       {/* 1. Gravity Stars Animation (Silver) */}
@@ -39,11 +64,17 @@ export default function CTA() {
         </p>
 
         <div className="flex flex-wrap justify-center gap-6">
-          <button className="bg-white text-black px-10 py-5 rounded-full font-schibsted font-bold text-sm uppercase tracking-widest hover:scale-105 hover:shadow-[0_20px_40px_rgba(255,255,255,0.1)] transition-all flex items-center gap-3">
+          <button 
+            onClick={handleStartTrial}
+            className="bg-white text-black px-10 py-5 rounded-full font-schibsted font-bold text-sm uppercase tracking-widest hover:scale-105 hover:shadow-[0_20px_40px_rgba(255,255,255,0.1)] transition-all flex items-center gap-3 cursor-pointer"
+          >
             Start Free Trial
             <ArrowRight className="w-4 h-4" />
           </button>
-          <button className="border border-white/30 bg-transparent text-white px-10 py-5 rounded-full font-schibsted font-bold text-sm uppercase tracking-widest hover:bg-white/10 transition-all">
+          <button 
+            onClick={handleExplorePlans}
+            className="border border-white/30 bg-transparent text-white px-10 py-5 rounded-full font-schibsted font-bold text-sm uppercase tracking-widest hover:bg-white/10 transition-all cursor-pointer"
+          >
             Explore Plans
           </button>
         </div>
