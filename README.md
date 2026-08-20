@@ -6,7 +6,7 @@ This system allows users to upload local PDFs or index public PDF links directly
 
 ---
 
-## 🚀 Key Features
+## 🚀 Key Features 
 
 *   **⚡ Dynamic Ingestion Playground**: Paste a direct PDF link or Google Drive preview link on the homepage to instantly download, parse, and index it into your dashboard library.
 *   **💳 Stripe Checkout Billing Portal**: Fully functional Stripe-hosted checkouts. Automatically redirects users to Stripe to purchase the Pro Tier ($12/mo) and handles successful return flows.
