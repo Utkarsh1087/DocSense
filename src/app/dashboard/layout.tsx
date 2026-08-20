@@ -15,11 +15,12 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 
 const navItems = [
-  { icon: <FolderOpen className="w-5 h-5" />, label: "Library", path: "/dashboard" },
-  { icon: <MessageSquare className="w-5 h-5" />, label: "Chat", path: "/dashboard/chat" },
-  { icon: <BarChart3 className="w-5 h-5" />, label: "Analytics", path: "/dashboard/analytics" },
-  { icon: <Users className="w-5 h-5" />, label: "Team", path: "/dashboard/team" },
+  { icon: <FolderOpen className="w-5 h-5" />, label: "Library", path: "/dashboard", comingSoon: false },
+  { icon: <MessageSquare className="w-5 h-5" />, label: "Chat", path: "/dashboard/chat", comingSoon: false },
+  { icon: <BarChart3 className="w-5 h-5" />, label: "Analytics", path: "/dashboard/analytics", comingSoon: true },
+  { icon: <Users className="w-5 h-5" />, label: "Team", path: "/dashboard/team", comingSoon: true },
 ];
+
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathnameHook = usePathname();
@@ -34,6 +35,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   useEffect(() => {
     const loadProfile = () => {
+      const loggedIn = localStorage.getItem("isLoggedIn") === "true";
+      if (!loggedIn) {
+        router.push("/login?redirect=" + encodeURIComponent(window.location.pathname));
+        return;
+      }
       setUsername(localStorage.getItem("username") || "Admin");
       setUserPlan(localStorage.getItem("userPlan") || "Starter");
     };
@@ -44,13 +50,25 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       window.removeEventListener("user-profile-change", loadProfile);
       window.removeEventListener("user-plan-change", loadProfile);
     };
-  }, []);
+  }, [router]);
+
 
   const handleLogout = () => {
     localStorage.removeItem("isLoggedIn");
+    localStorage.removeItem("userId");
+    localStorage.removeItem("username");
+    localStorage.removeItem("userEmail");
+    localStorage.removeItem("userPlan");
+    localStorage.removeItem("docsense_token");
+    
+    // Clear cookies
+    document.cookie = "docsense_auth=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
+    document.cookie = "docsense_session=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
+
     window.dispatchEvent(new Event("login-state-change"));
     router.push("/");
   };
+
 
   return (
     <div className="flex h-screen bg-[#fcfcfc] overflow-hidden">
@@ -69,7 +87,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
         <nav className="flex-1 space-y-2">
           {navItems.map((item) => {
-            const isPaidFeature = item.label === "Analytics" || item.label === "Team";
+            const isPaidFeature = item.comingSoon;
             return (
               <Link 
                 key={item.label}
@@ -77,11 +95,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 onClick={(e) => {
                   if (isPaidFeature) {
                     e.preventDefault();
-                    if (userPlan === "Starter") {
-                      alert(`🔒 The ${item.label} feature is exclusive to the Pro Tier subscription. Please upgrade in Settings to gain access!`);
-                    } else {
-                      alert(`🚀 The ${item.label} dashboard is coming soon in the next major update for Pro members!`);
-                    }
+                    alert(`🚀 The ${item.label} feature is coming soon in the next major update!`);
                   }
                 }}
                 className={`flex items-center gap-4 px-4 py-3 rounded-2xl font-schibsted font-bold text-sm transition-all ${

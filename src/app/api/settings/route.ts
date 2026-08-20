@@ -1,32 +1,36 @@
 import { NextResponse } from "next/server";
-import { DEFAULT_SETTINGS, readSettings, writeSettings } from "../../../lib/settingsHelpers";
+import { DEFAULT_SETTINGS, readUserSettings, writeUserSettings, AppSettings } from "../../../lib/settingsHelpers";
+import { getUserIdFromRequest } from "../../../lib/auth";
 
-// GET: Retrieve current settings
-export async function GET() {
+// GET: Retrieve current settings for the authenticated user
+export async function GET(req: Request) {
   try {
-    const settings = readSettings();
-    
-    // Also return status of environment variables
+    const userId = getUserIdFromRequest(req);
+    const settings = await readUserSettings(userId);
+
+    // Also return status of environment variables (without disclosing sensitive internal names)
     const envStatus = {
       geminiKeyLoaded: !!process.env.GEMINI_API_KEY,
       pineconeKeyLoaded: !!process.env.PINECONE_API_KEY,
       pineconeIndexLoaded: !!process.env.PINECONE_INDEX_NAME,
-      pineconeIndexName: process.env.PINECONE_INDEX_NAME || "",
+      stripeKeyLoaded: !!process.env.STRIPE_SECRET_KEY,
     };
 
     return NextResponse.json({ settings, envStatus });
+
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
 
-// POST: Update settings
+// POST: Update settings for the authenticated user
 export async function POST(req: Request) {
   try {
+    const userId = getUserIdFromRequest(req);
     const newSettings = await req.json();
-    
+
     // Validation & defaults binding
-    const updated = {
+    const updated: AppSettings = {
       model: newSettings.model || DEFAULT_SETTINGS.model,
       systemInstruction: newSettings.systemInstruction || DEFAULT_SETTINGS.systemInstruction,
       temperature: typeof newSettings.temperature === "number" ? newSettings.temperature : DEFAULT_SETTINGS.temperature,
@@ -38,14 +42,14 @@ export async function POST(req: Request) {
       similarityThreshold: typeof newSettings.similarityThreshold === "number" ? newSettings.similarityThreshold : DEFAULT_SETTINGS.similarityThreshold,
       retrievalStrategy: newSettings.retrievalStrategy || DEFAULT_SETTINGS.retrievalStrategy,
       ocrEnabled: typeof newSettings.ocrEnabled === "boolean" ? newSettings.ocrEnabled : DEFAULT_SETTINGS.ocrEnabled,
-      parserMode: newSettings.parserMode || DEFAULT_SETTINGS.parserMode,
+      parserMode: (["standard", "layout", "table"].includes(newSettings.parserMode) ? newSettings.parserMode : DEFAULT_SETTINGS.parserMode) as "standard" | "layout" | "table",
       ignoredKeywords: typeof newSettings.ignoredKeywords === "string" ? newSettings.ignoredKeywords : DEFAULT_SETTINGS.ignoredKeywords,
       retentionPolicy: newSettings.retentionPolicy || DEFAULT_SETTINGS.retentionPolicy,
       theme: newSettings.theme || DEFAULT_SETTINGS.theme,
     };
 
-    writeSettings(updated);
-    return NextResponse.json(updated);
+    const saved = await writeUserSettings(userId, updated);
+    return NextResponse.json(saved);
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
+import { getUserIdFromRequest, getPlanFromRequest } from "../../../../lib/auth";
+import { findUserById } from "../../../../lib/userHelpers";
 
 const stripeSecretKey = process.env.STRIPE_SECRET_KEY || "";
 
@@ -25,18 +27,32 @@ export async function POST(req: Request) {
       );
     }
 
-    const origin = req.headers.get("origin") || "http://localhost:3000";
+    const origin = req.headers.get("origin") || process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+    const userId = getUserIdFromRequest(req);
 
-    // Create session with dynamic product data
+    // Look up user for email (to pre-fill Stripe checkout form)
+    let customerEmail: string | undefined;
+    try {
+      const user = await findUserById(userId);
+      customerEmail = user?.email;
+    } catch {
+      // Non-fatal — checkout still works without pre-filled email
+    }
+
+    // Create Stripe checkout session with userId in metadata for webhook lookup
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ["card"],
+      customer_email: customerEmail,
+      metadata: {
+        userId, // Critical: used by webhook to upgrade the correct user
+      },
       line_items: [
         {
           price_data: {
             currency: "usd",
             product_data: {
               name: "DocSense Pro Subscription",
-              description: "Unlimited PDF indexing, 128K context search capability, ultra-low retrieval latency, page & source citation features.",
+              description: "Unlimited PDF indexing, 128K context search, <150ms vector retrieval, page & source citations.",
             },
             unit_amount: 1200, // $12.00 USD
             recurring: {
@@ -57,3 +73,4 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
+

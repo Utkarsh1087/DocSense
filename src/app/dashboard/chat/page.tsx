@@ -1,18 +1,23 @@
 "use client";
 
 import React, { useState, useEffect, useRef, Suspense } from "react";
-import { Send, Sparkles, MessageSquare, Loader2, BookOpen, AlertCircle, FileText } from "lucide-react";
+import { Send, Sparkles, Loader2, BookOpen, AlertCircle, FileText, Zap, Clock } from "lucide-react";
 import { useSearchParams } from "next/navigation";
+
+interface Citation {
+  id: string;
+  score: number;
+  filename: string;
+  pageNumber: number | string;
+}
 
 interface Message {
   role: "user" | "model";
   text: string;
-  citations?: Array<{
-    id: string;
-    score: number;
-    filename: string;
-    pageNumber: number | string;
-  }>;
+  citations?: Citation[];
+  vectorMs?: number;
+  totalMs?: number;
+  streaming?: boolean;
 }
 
 interface Document {
@@ -20,10 +25,102 @@ interface Document {
   name: string;
 }
 
+// ── SSE stream consumer ────────────────────────────────────────────────────────
+
+async function streamChat(
+  payload: { message: string; history: any[]; documentName?: string },
+  headers: Record<string, string>,
+  onToken: (token: string) => void,
+  onMeta: (meta: { vectorMs?: number; model?: string }) => void,
+  onDone: (data: { citations: Citation[]; totalMs: number; vectorMs: number }) => void,
+  onError: (msg: string) => void
+): Promise<void> {
+  const res = await fetch("/api/chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...headers },
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    onError(data.error || `Request failed (${res.status})`);
+    return;
+  }
+
+  const reader = res.body?.getReader();
+  if (!reader) {
+    onError("No response body available.");
+    return;
+  }
+
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n\n");
+    buffer = lines.pop() || "";
+
+    for (const line of lines) {
+      if (!line.startsWith("data: ")) continue;
+      try {
+        const event = JSON.parse(line.slice(6));
+
+        if (event.error) {
+          onError(event.error);
+          return;
+        }
+        if (event.vectorMs !== undefined && !event.done) {
+          onMeta({ vectorMs: event.vectorMs, model: event.model });
+        }
+        if (event.token) {
+          onToken(event.token);
+        }
+        if (event.done && event.citations !== undefined) {
+          onDone({
+            citations: event.citations,
+            totalMs: event.totalMs || 0,
+            vectorMs: event.vectorMs || 0,
+          });
+        }
+      } catch {
+        // Malformed SSE event — skip
+      }
+    }
+  }
+}
+
+// ── Latency badge ──────────────────────────────────────────────────────────────
+
+function LatencyBadge({ vectorMs, totalMs }: { vectorMs?: number; totalMs?: number }) {
+  if (!vectorMs && !totalMs) return null;
+  return (
+    <div className="flex items-center gap-3 mt-2 pl-2">
+      {vectorMs !== undefined && (
+        <span className="flex items-center gap-1 text-[9px] font-bold font-schibsted uppercase tracking-widest text-black/30 bg-green-50 border border-green-100 rounded-md px-2 py-0.5">
+          <Zap className="w-2.5 h-2.5 text-green-500" />
+          {vectorMs}ms retrieval
+        </span>
+      )}
+      {totalMs !== undefined && (
+        <span className="flex items-center gap-1 text-[9px] font-bold font-schibsted uppercase tracking-widest text-black/30 bg-purple-50 border border-purple-100 rounded-md px-2 py-0.5">
+          <Clock className="w-2.5 h-2.5 text-purple-500" />
+          {totalMs}ms total
+        </span>
+      )}
+    </div>
+  );
+}
+
+// ── Main chat component ────────────────────────────────────────────────────────
+
 function ChatConsoleContent() {
   const searchParams = useSearchParams();
   const docParam = searchParams.get("doc") || "";
-  
+
   const [messages, setMessages] = useState<Message[]>([
     {
       role: "model",
@@ -37,15 +134,13 @@ function ChatConsoleContent() {
   const [selectedDoc, setSelectedDoc] = useState<string>(docParam);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const abortRef = useRef<boolean>(false);
 
-  // Fetch available documents on load
   useEffect(() => {
     async function fetchDocs() {
       try {
         const res = await fetch("/api/documents", {
-          headers: {
-            "x-user-id": localStorage.getItem("userId") || "",
-          }
+          headers: { "x-user-id": localStorage.getItem("userId") || "" },
         });
         if (res.ok) {
           const data = await res.json();
@@ -58,7 +153,6 @@ function ChatConsoleContent() {
     fetchDocs();
   }, []);
 
-  // Scroll to bottom on new messages
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
@@ -71,49 +165,92 @@ function ChatConsoleContent() {
     setInput("");
     setError(null);
     setLoading(true);
+    abortRef.current = false;
 
     // Append user message
     const updatedMessages = [...messages, { role: "user" as const, text: userMessageText }];
     setMessages(updatedMessages);
 
-    try {
-      // Map messages for Gemini history format
-      const historyPayload = updatedMessages.slice(0, -1).map((msg) => ({
-        role: msg.role,
-        parts: [{ text: msg.text }],
-      }));
+    // Add a streaming placeholder for the model response
+    const streamingIdx = updatedMessages.length;
+    setMessages((prev) => [
+      ...prev,
+      { role: "model", text: "", streaming: true },
+    ]);
 
-      const res = await fetch("/api/chat", {
-        method: "POST",
-        headers: { 
-          "Content-Type": "application/json",
-          "x-user-plan": localStorage.getItem("userPlan") || "Starter",
-          "x-user-id": localStorage.getItem("userId") || ""
-        },
-        body: JSON.stringify({
+    const historyPayload = updatedMessages.slice(0, -1).map((msg) => ({
+      role: msg.role,
+      parts: [{ text: msg.text }],
+    }));
+
+    const headers: Record<string, string> = {
+      "x-user-plan": localStorage.getItem("userPlan") || "Starter",
+      "x-user-id": localStorage.getItem("userId") || "",
+    };
+
+    const token = localStorage.getItem("docsense_token");
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+
+    let finalCitations: Citation[] = [];
+    let finalVectorMs: number | undefined;
+    let finalTotalMs: number | undefined;
+
+    try {
+      await streamChat(
+        {
           message: userMessageText,
           history: historyPayload,
           documentName: selectedDoc || undefined,
-        }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to generate answer.");
-      }
-
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "model",
-          text: data.answer,
-          citations: data.citations,
         },
-      ]);
+        headers,
+        // onToken
+        (token) => {
+          if (abortRef.current) return;
+          setMessages((prev) => {
+            const updated = [...prev];
+            const msgIdx = streamingIdx;
+            if (updated[msgIdx]) {
+              updated[msgIdx] = {
+                ...updated[msgIdx],
+                text: updated[msgIdx].text + token,
+              };
+            }
+            return updated;
+          });
+        },
+        // onMeta
+        (meta) => {
+          if (meta.vectorMs !== undefined) finalVectorMs = meta.vectorMs;
+        },
+        // onDone
+        (data) => {
+          finalCitations = data.citations;
+          finalVectorMs = data.vectorMs;
+          finalTotalMs = data.totalMs;
+          setMessages((prev) => {
+            const updated = [...prev];
+            if (updated[streamingIdx]) {
+              updated[streamingIdx] = {
+                ...updated[streamingIdx],
+                streaming: false,
+                citations: data.citations,
+                vectorMs: data.vectorMs,
+                totalMs: data.totalMs,
+              };
+            }
+            return updated;
+          });
+        },
+        // onError
+        (errMsg) => {
+          setError(errMsg);
+          setMessages((prev) => prev.filter((_, i) => i !== streamingIdx));
+        }
+      );
     } catch (err: any) {
       console.error(err);
       setError(err.message || "An unexpected error occurred.");
+      setMessages((prev) => prev.filter((_, i) => i !== streamingIdx));
     } finally {
       setLoading(false);
     }
@@ -121,7 +258,7 @@ function ChatConsoleContent() {
 
   return (
     <div className="flex flex-col h-[calc(100vh-80px)] bg-[#fcfcfc]">
-      {/* Header Panel */}
+      {/* Header */}
       <div className="bg-white border-b border-black/5 px-10 py-4 flex justify-between items-center shrink-0">
         <div>
           <h1 className="font-fustat font-bold text-2xl text-black tracking-tight uppercase">Chat Console</h1>
@@ -130,7 +267,6 @@ function ChatConsoleContent() {
           </p>
         </div>
 
-        {/* Filter Selection */}
         <div className="flex items-center gap-3">
           <label className="text-[10px] font-bold font-schibsted uppercase tracking-widest text-black/40">
             Query Scope:
@@ -150,7 +286,7 @@ function ChatConsoleContent() {
         </div>
       </div>
 
-      {/* Chat Messages Frame */}
+      {/* Messages */}
       <div className="flex-1 overflow-y-auto px-10 py-8 space-y-6">
         {messages.map((msg, i) => (
           <div
@@ -162,18 +298,22 @@ function ChatConsoleContent() {
             {/* Avatar */}
             <div
               className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 shadow-sm ${
-                msg.role === "user" ? "bg-black text-white" : "bg-white border border-black/5 text-black"
+                msg.role === "user"
+                  ? "bg-black text-white"
+                  : "bg-white border border-black/5 text-black"
               }`}
             >
               {msg.role === "user" ? (
                 <span className="text-xs font-bold font-schibsted">ME</span>
+              ) : msg.streaming ? (
+                <Loader2 className="w-5 h-5 text-purple-600 animate-spin" />
               ) : (
                 <Sparkles className="w-5 h-5 text-purple-600" />
               )}
             </div>
 
-            {/* Chat Bubble */}
-            <div className="space-y-3">
+            {/* Bubble */}
+            <div className="space-y-2 max-w-[85%]">
               <div
                 className={`p-5 rounded-[24px] text-sm leading-relaxed shadow-sm font-inter ${
                   msg.role === "user"
@@ -181,11 +321,20 @@ function ChatConsoleContent() {
                     : "bg-white border border-black/5 text-black rounded-tl-none"
                 }`}
               >
-                <p className="whitespace-pre-wrap">{msg.text}</p>
+                {msg.text ? (
+                  <p className="whitespace-pre-wrap">{msg.text}</p>
+                ) : msg.streaming ? (
+                  <span className="flex items-center gap-2 text-black/40">
+                    <span className="w-1.5 h-1.5 bg-purple-500 rounded-full animate-bounce [animation-delay:-0.3s]" />
+                    <span className="w-1.5 h-1.5 bg-purple-500 rounded-full animate-bounce [animation-delay:-0.15s]" />
+                    <span className="w-1.5 h-1.5 bg-purple-500 rounded-full animate-bounce" />
+                  </span>
+                ) : null}
               </div>
 
-              {/* Citations / Sources */}
-              {msg.role === "model" && msg.citations && msg.citations.length > 0 && (
+              {/* Citations */}
+              {msg.role === "model" && !msg.streaming && msg.citations && msg.citations.length > 0 && (
+
                 <div className="pl-2 space-y-2">
                   <div className="flex items-center gap-1.5 text-[9px] font-bold font-schibsted uppercase tracking-widest text-black/40">
                     <BookOpen className="w-3 h-3" />
@@ -196,12 +345,15 @@ function ChatConsoleContent() {
                       <div
                         key={idx}
                         className="bg-white border border-black/5 rounded-lg p-2.5 flex items-center gap-2 text-[10px] font-medium text-black/60 shadow-xs hover:border-black/10 transition-colors"
-                        title={`Similarity Match: ${(cit.score * 100).toFixed(1)}%`}
+                        title={`Similarity: ${(cit.score * 100).toFixed(1)}%`}
                       >
                         <FileText className="w-3.5 h-3.5 text-black/40" />
                         <span className="font-bold text-black line-clamp-1 max-w-[150px]">{cit.filename}</span>
                         <span className="bg-black/5 px-1.5 py-0.5 rounded text-[8px] font-bold">
                           Page {cit.pageNumber}
+                        </span>
+                        <span className="bg-green-50 text-green-700 border border-green-100 px-1.5 py-0.5 rounded text-[8px] font-bold">
+                          {(cit.score * 100).toFixed(0)}%
                         </span>
                       </div>
                     ))}
@@ -211,18 +363,6 @@ function ChatConsoleContent() {
             </div>
           </div>
         ))}
-
-        {/* Loading Bubble */}
-        {loading && (
-          <div className="flex gap-4 max-w-4xl mr-auto">
-            <div className="w-10 h-10 rounded-2xl bg-white border border-black/5 flex items-center justify-center shrink-0 shadow-sm">
-              <Loader2 className="w-5 h-5 text-purple-600 animate-spin" />
-            </div>
-            <div className="bg-white border border-black/5 text-black p-5 rounded-[24px] rounded-tl-none text-sm shadow-sm flex items-center gap-2">
-              <span className="font-medium text-black/40 animate-pulse font-inter">Agent is searching index and generating answer...</span>
-            </div>
-          </div>
-        )}
 
         {/* Error Alert */}
         {error && (
@@ -237,7 +377,7 @@ function ChatConsoleContent() {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input Field Frame */}
+      {/* Input */}
       <div className="bg-white border-t border-black/5 p-6 shrink-0">
         <form onSubmit={handleSend} className="max-w-4xl mx-auto flex items-center gap-3">
           <input
@@ -257,7 +397,7 @@ function ChatConsoleContent() {
             className="bg-black text-white w-14 h-14 rounded-2xl flex items-center justify-center hover:scale-105 active:scale-95 transition-all shadow-md shadow-black/10 disabled:opacity-50 disabled:scale-100"
             disabled={!input.trim() || loading}
           >
-            <Send className="w-5 h-5" />
+            {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
           </button>
         </form>
       </div>
@@ -267,7 +407,13 @@ function ChatConsoleContent() {
 
 export default function ChatConsole() {
   return (
-    <Suspense fallback={<div className="flex h-screen items-center justify-center font-schibsted font-bold text-black/40">Loading Chat Console...</div>}>
+    <Suspense
+      fallback={
+        <div className="flex h-screen items-center justify-center font-schibsted font-bold text-black/40">
+          Loading Chat Console...
+        </div>
+      }
+    >
       <ChatConsoleContent />
     </Suspense>
   );

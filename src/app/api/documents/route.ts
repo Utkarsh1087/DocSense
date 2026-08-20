@@ -1,17 +1,18 @@
 import { NextResponse } from "next/server";
-import { createRequire } from "module";
-const require = createRequire(import.meta.url);
-const pdf = require("pdf-parse/lib/pdf-parse.js");
-import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
-import { GoogleGenerativeAIEmbeddings } from "@langchain/google-genai";
-import { Pinecone } from "@pinecone-database/pinecone";
-import { readSettings } from "../../../lib/settingsHelpers";
 import { readDocs, writeDocs, formatBytes } from "../../../lib/docHelpers";
+import { readUserSettings } from "../../../lib/settingsHelpers";
+import { incrementUserStats } from "../../../lib/userHelpers";
+import { checkRateLimit, getRateLimitHeaders } from "../../../lib/rateLimiter";
+import { getUserIdFromRequest, getPlanFromRequest } from "../../../lib/auth";
+import { ingestDocument } from "../../../lib/ingestionPipeline";
 
-// GET: Retrieve all user-specific documents
+export const maxDuration = 300; // 5 minutes — large PDF ingestion
+
+// ─── GET: Retrieve user's documents ───────────────────────────────────────────
+
 export async function GET(req: Request) {
   try {
-    const userId = req.headers.get("x-user-id") || "default_user";
+    const userId = getUserIdFromRequest(req);
     const docs = await readDocs();
     const userDocs = docs.filter((d: any) => d.userId === userId);
     return NextResponse.json(userDocs);
@@ -20,9 +21,24 @@ export async function GET(req: Request) {
   }
 }
 
-// POST: Upload and index a PDF document
+// ─── POST: Upload and index a PDF ─────────────────────────────────────────────
+
 export async function POST(req: Request) {
+  const userId = getUserIdFromRequest(req);
+  const userPlan = getPlanFromRequest(req);
+
   try {
+    // Rate limit uploads (counts against same pool as queries)
+    const rl = checkRateLimit(`upload_${userId}`, userPlan);
+    const rlHeaders = getRateLimitHeaders(rl);
+
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { error: `Upload rate limit exceeded. Retry in ${Math.ceil(rl.resetInMs / 1000)}s.` },
+        { status: 429, headers: rlHeaders }
+      );
+    }
+
     const formData = await req.formData();
     const file = formData.get("file") as File | null;
 
@@ -34,25 +50,20 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Only PDF files are supported currently." }, { status: 400 });
     }
 
-    const userPlan = req.headers.get("x-user-plan") || "Starter";
-    const userId = req.headers.get("x-user-id") || "default_user";
-
+    // Starter plan document count limit
     if (userPlan === "Starter") {
       const currentDocs = await readDocs();
       const userDocs = currentDocs.filter((d: any) => d.userId === userId);
       if (userDocs.length >= 3) {
         return NextResponse.json(
-          { error: "Upload limit reached. The Starter plan is limited to 3 documents. Please upgrade to Pro in Settings to upload unlimited files." },
+          { error: "Upload limit reached. The Starter plan allows 3 documents. Upgrade to Pro for unlimited uploads." },
           { status: 403 }
         );
       }
     }
 
-    const apiKey = process.env.GEMINI_API_KEY;
-    const pineconeKey = process.env.PINECONE_API_KEY;
-    const indexName = process.env.PINECONE_INDEX_NAME;
-
-    if (!apiKey || !pineconeKey || !indexName) {
+    // Validate required env vars
+    if (!process.env.GEMINI_API_KEY || !process.env.PINECONE_API_KEY || !process.env.PINECONE_INDEX_NAME) {
       return NextResponse.json(
         { error: "Server credentials missing. Set GEMINI_API_KEY, PINECONE_API_KEY, and PINECONE_INDEX_NAME." },
         { status: 500 }
@@ -61,146 +72,49 @@ export async function POST(req: Request) {
 
     const filename = file.name;
     const sizeStr = formatBytes(file.size);
-    const dateStr = "Just now";
-
-    // 1. Read buffer
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    // 2. Parse PDF page-by-page using custom page-renderer to retain page numbers
-    let pageCountTracker = 0;
-    const renderPageHelper = (pageData: any) => {
-      pageCountTracker++;
-      return pageData.getTextContent().then((textContent: any) => {
-        let lastY = 0;
-        let text = `---PAGE_NUM:${pageCountTracker}---`;
-        for (const item of textContent.items) {
-          if (lastY === item.transform[5] || !lastY) {
-            text += item.str;
-          } else {
-            text += "\n" + item.str;
-          }
-          lastY = item.transform[5];
-        }
-        return text;
-      });
-    };
+    // Load per-user settings from MongoDB
+    const config = await readUserSettings(userId);
 
-    const pdfParser = typeof pdf === "function" ? pdf : (pdf as any).default;
-    const pdfData = await pdfParser(buffer, { pagerender: renderPageHelper });
+    // Run the parallel ingestion pipeline
+    const result = await ingestDocument(buffer, filename, userId, config);
 
-    const config = readSettings();
-
-    // 3. Chunk text page-by-page
-    const textSplitter = new RecursiveCharacterTextSplitter({
-      chunkSize: config.chunkSize || 1500,
-      chunkOverlap: config.chunkOverlap || 300,
-    });
-
-    const ignoredWords = (config.ignoredKeywords || "")
-      .split(",")
-      .map((w: string) => w.trim().toLowerCase())
-      .filter(Boolean);
-
-    const docsToEmbed: { pageContent: string; metadata: { filename: string; pageNumber: number } }[] = [];
-    const sections = pdfData.text.split(/---PAGE_NUM:(\d+)---/);
-    
-    for (let i = 1; i < sections.length; i += 2) {
-      const pageNumStr = sections[i];
-      const pageContent = sections[i + 1] || "";
-      const pageNum = parseInt(pageNumStr, 10);
-
-      if (pageContent.trim().length === 0) continue;
-
-      const pageChunks = await textSplitter.splitText(pageContent);
-      for (const chunk of pageChunks) {
-        if (chunk.trim().length === 0) continue;
-
-        // Filter out chunks containing any ignored keywords
-        const lowerChunk = chunk.toLowerCase();
-        const hasIgnoredWord = ignoredWords.some((w: string) => lowerChunk.includes(w));
-        if (hasIgnoredWord) continue;
-
-        docsToEmbed.push({
-          pageContent: chunk,
-          metadata: {
-            filename,
-            pageNumber: pageNum,
-          },
-        });
-      }
-    }
-
-    if (docsToEmbed.length === 0) {
-      return NextResponse.json({ error: "The uploaded PDF appears to have no indexable text." }, { status: 400 });
-    }
-
-    // 4. Initialize Pinecone and Embeddings
-    const pinecone = new Pinecone({ apiKey: pineconeKey });
-    const pineconeIndex = pinecone.Index(indexName);
-    const embeddings = new GoogleGenerativeAIEmbeddings({
-      apiKey,
-      modelName: "gemini-embedding-001",
-    });
-
-    const docId = `doc_${Date.now()}`;
-    const vectorIds: string[] = [];
-    const batchSize = 10;
-
-    // Index batches to Pinecone
-    for (let i = 0; i < docsToEmbed.length; i += batchSize) {
-      const batch = docsToEmbed.slice(i, i + batchSize);
-      const textsToEmbed = batch.map((d) => d.pageContent);
-      const embeds = await embeddings.embedDocuments(textsToEmbed);
-
-      const vectors = batch.map((doc, index) => {
-        const values = embeds[index]?.slice(0, 768) || [];
-        if (values.length === 0) return null;
-
-        const vectorId = `${docId}_c${i + index}`;
-        vectorIds.push(vectorId);
-
-        return {
-          id: vectorId,
-          values,
-          metadata: {
-            filename: doc.metadata.filename,
-            pageNumber: doc.metadata.pageNumber,
-            text: doc.pageContent,
-          },
-        };
-      }).filter(Boolean) as any[];
-
-      if (vectors.length > 0) {
-        await pineconeIndex.upsert(vectors);
-      }
-    }
-
-    // 5. Save metadata locally
+    // Save document metadata atomically to MongoDB
     const newDoc = {
-      id: docId,
+      id: result.docId,
       name: filename,
       size: sizeStr,
-      date: dateStr,
+      date: new Date().toISOString(),
       status: "Indexed",
-      tokens: `${docsToEmbed.length * 250} est.`, // rough approximation for display
-      vectorIds,
-      chunkCount: docsToEmbed.length,
-      userId, // Keyed by user ID!
+      tokens: result.estimatedTokens,
+      vectorIds: result.vectorIds,
+      chunkCount: result.chunkCount,
+      pageCount: result.pageCount,
+      parserMode: result.parserMode,
+      userId,
     };
 
-    const currentDocs = await readDocs();
-    currentDocs.unshift(newDoc);
-    await writeDocs(currentDocs);
+    const { insertDoc, deleteDocById } = await import("../../../lib/docHelpers");
+    await insertDoc(newDoc);
 
-    return NextResponse.json(newDoc);
+    // Update user stats (non-blocking)
+    incrementUserStats(userId, "documents", 1).catch(() => {});
+    incrementUserStats(userId, "vectors", result.vectorIds.length).catch(() => {});
+
+    return NextResponse.json(newDoc, { headers: rlHeaders });
   } catch (error: any) {
     console.error("Failed to upload/index document:", error);
-    return NextResponse.json({ error: error.message || "Failed to index document." }, { status: 500 });
+    return NextResponse.json(
+      { error: error.message || "Failed to index document." },
+      { status: 500 }
+    );
   }
 }
 
-// DELETE: Delete a document and its vectors from Pinecone
+// ─── DELETE: Remove document and its Pinecone vectors ─────────────────────────
+
 export async function DELETE(req: Request) {
   try {
     const { url } = req;
@@ -221,30 +135,36 @@ export async function DELETE(req: Request) {
       );
     }
 
-    const userId = req.headers.get("x-user-id") || "default_user";
-    const currentDocs = await readDocs();
-    const docToDelete = currentDocs.find((d: any) => d.id === id);
+    const userId = getUserIdFromRequest(req);
+    const userDocs = await readDocs(userId);
+    const docToDelete = userDocs.find((d: any) => d.id === id);
 
     if (!docToDelete) {
-      return NextResponse.json({ error: "Document not found." }, { status: 404 });
+      return NextResponse.json({ error: "Document not found or unauthorized access." }, { status: 404 });
     }
 
-    if (docToDelete.userId !== userId) {
-      return NextResponse.json({ error: "Unauthorized access to this document." }, { status: 403 });
-    }
-
-    // 1. Delete vectors from Pinecone
+    // Delete vectors from Pinecone
+    const { Pinecone } = await import("@pinecone-database/pinecone");
     const pinecone = new Pinecone({ apiKey: pineconeKey });
     const pineconeIndex = pinecone.Index(indexName);
 
     if (docToDelete.vectorIds && docToDelete.vectorIds.length > 0) {
-      // Pinecone delete API takes string IDs in batches or list
-      await pineconeIndex.deleteMany(docToDelete.vectorIds);
+      // Delete in batches of 1000 (Pinecone limit)
+      const batchSize = 1000;
+      for (let i = 0; i < docToDelete.vectorIds.length; i += batchSize) {
+        const batch = docToDelete.vectorIds.slice(i, i + batchSize);
+        await pineconeIndex.deleteMany(batch);
+      }
     }
 
-    // 2. Remove entry from local metadata database
-    const updatedDocs = currentDocs.filter((d: any) => d.id !== id);
-    await writeDocs(updatedDocs);
+    // Remove atomically from MongoDB
+    const { deleteDocById } = await import("../../../lib/docHelpers");
+    await deleteDocById(id, userId);
+
+
+    // Update stats (non-blocking)
+    incrementUserStats(userId, "documents", -1).catch(() => {});
+    incrementUserStats(userId, "vectors", -(docToDelete.vectorIds?.length || 0)).catch(() => {});
 
     return NextResponse.json({ success: true, message: `Successfully deleted document: ${docToDelete.name}` });
   } catch (error: any) {
