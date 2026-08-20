@@ -174,5 +174,25 @@ DocSense/
 
 ---
 
-## 📜 License
-MIT License. Created by [Utkarsh Rajput](https://github.com/Utkarsh1087).
+## ☕ Developer's Confession & Dad Jokes (From the Engine Room)
+
+> **Dad Joke #1**: Why did the PDF go to therapy?  
+> *Because it had too many formatting issues and couldn't find its margins.* 📄
+
+> **Dad Joke #2**: Why did the vector database break up with the relational database?  
+> *Because they had no common dimension and relational DB was way too attached to tables.* 📐
+
+* **The 107-Character Stripe Key Saga**: Special thanks to Stripe for secret keys that look like randomized CAPTCHAs. If your test payments are failing, verify if your `0` is a zero, your `O` is a capital letter, and your `Q` isn't masquerading as an `O`. We've spent 2 AM debugging that.
+* **CSS Overflow vs. Sanity**: More time was spent wrestling smooth-scrolling overflow conflicts than implementing the entire cosine similarity vector search pipeline. CSS `overflow: hidden`: keeping developers humble since 1996.
+* **The AI Greetings Engine**: If you register with an email like `DoctorSensei99@docs.com`, our Gemini greeting endpoint will enthusiastically welcome you as `Hello, Doctorsensei99!`. You are officially a doctor in our database.
+* **The "Coming Soon" Button**: Yes, it has a sleek purple badge. Yes, clicking it 50 times in a row will not magically write the feature by itself (we checked).
+
+---
+
+## 📜 License & Author
+
+Crafted with 🖤, way too much tea ☕, and ~14,000 hot-reloads of `localhost:3000`.
+
+**Author**: [Utkarsh Rajput](https://github.com/Utkarsh1087)  
+**License**: MIT License
+
